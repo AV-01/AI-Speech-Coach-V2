@@ -91,7 +91,7 @@ if uploaded and run_button:
         
         if transcription_text:
             results = analyze_transcription(transcription_response.to_dict())
-
+            st.write(transcription_response.to_dict())
             st.markdown(f"**Average WPM:** {results['average_wpm']:.2f}")
             st.markdown(f"**Number of filler words:** {results['filler_count']}")
 
