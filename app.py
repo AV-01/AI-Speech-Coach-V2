@@ -23,7 +23,7 @@ if uploaded and run_button:
         temp_audio_file.close()  # Close so ffmpeg can write
         
         try:
-            ffmpeg.input(temp_video_path).output(temp_audio_path, **{'q:a': 0, 'map': 'a'}).run(overwrite_output=True)
+            ffmpeg.input(temp_video_path).output(temp_audio_path, **{'q:a': 0, 'map': 'a?'}).run(overwrite_output=True)
         except Exception as e:
             st.error(f"Error extracting audio: {e}")
             os.unlink(temp_video_path)
