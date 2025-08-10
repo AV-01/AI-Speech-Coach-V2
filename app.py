@@ -90,7 +90,7 @@ if uploaded and run_button:
         os.unlink(temp_audio_path)
         
         if transcription_text:
-            results = analyze_transcription(transcription_response)
+            results = analyze_transcription(dict(transcription_response))
 
             st.markdown(f"**Average WPM:** {results['average_wpm']:.2f}")
             st.markdown(f"**Number of filler words:** {results['filler_count']}")
