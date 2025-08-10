@@ -35,9 +35,9 @@ def analyze_eye_contact(video_path):
             total_processed_frames += 1
             continue
             
-        # progress = min(total_processed_frames / total_frames, 1.0)
-        # progress_bar.progress(progress)
-        # status_text.text(f"Processing frame {total_processed_frames}/{total_frames}")
+        progress = min(total_processed_frames / total_frames, 1.0)
+        progress_bar.progress(progress)
+        status_text.text(f"Processing frame {total_processed_frames}/{total_frames}")
         
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
@@ -168,10 +168,8 @@ st.markdown("Upload a video to analyze both speech patterns and eye contact beha
 uploaded = st.file_uploader("Upload MP4 or MOV video", type=['mp4', 'mov'])
 
 col1, col2 = st.columns(2)
-with col1:
-    analyze_speech = st.checkbox("Analyze Speech", value=True)
-with col2:
-    analyze_vision = st.checkbox("Analyze Eye Contact & Facial Features", value=True)
+analyze_speech = True
+analyze_vision = True
 
 run_button = st.button("Analyze")
 
@@ -188,7 +186,6 @@ if uploaded and run_button:
         results = {}
         
         if analyze_speech:
-            st.subheader("🎙️ Speech Analysis")
             with st.spinner("Extracting audio and transcribing..."):
                 temp_audio_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
                 temp_audio_path = temp_audio_file.name
@@ -219,7 +216,7 @@ if uploaded and run_button:
                 os.unlink(temp_audio_path)
         
         if analyze_vision:
-            st.subheader("👁️ Eye Contact & Facial Analysis")
+            # st.subheader("Eye Contact & Facial Analysis")
             with st.spinner("Analyzing facial features and eye contact..."):
                 try:
                     results['vision'] = analyze_eye_contact(temp_video_path)
@@ -237,7 +234,7 @@ if uploaded and run_button:
         # speech results
         if analyze_speech and 'speech' in results:
             with col1:
-                st.subheader("🎙️ Speech Metrics")
+                st.subheader("Speech Metrics")
                 speech_results = results['speech']
                 
                 st.metric("Average Words Per Minute", f"{speech_results['average_wpm']:.1f}")
@@ -260,13 +257,13 @@ if uploaded and run_button:
                     i, wpm, start, end, text = speech_results['fastest_segment']
                     st.markdown("**Fastest segment:**")
                     st.markdown(f"{start:.1f}s - {end:.1f}s ({wpm:.1f} WPM)")
-                    st.markdown(f" \"{text[:100]}...\"" if len(text) > 100 else f"📝 \"{text}\"")
+                    st.markdown(f" \"{text[:100]}...\"" if len(text) > 100 else f" \"{text}\"")
                 
                 if speech_results['slowest_segment']:
                     i, wpm, start, end, text = speech_results['slowest_segment']
                     st.markdown("Slowest segment:")
                     st.markdown(f"{start:.1f}s - {end:.1f}s ({wpm:.1f} WPM)")
-                    st.markdown(f"\"{text[:100]}...\"" if len(text) > 100 else f"📝 \"{text}\"")
+                    st.markdown(f"\"{text[:100]}...\"" if len(text) > 100 else f" \"{text}\"")
         
         # vision results
         if analyze_vision and 'vision' in results:
