@@ -37,7 +37,7 @@ if uploaded and run_button:
                 transcription_response = client.audio.transcriptions.create(
                     file=audio_file,
                     model="whisper-1",
-                    response_format="text"
+                    response_format="verbose_json"
                 )
             transcription_text = transcription_response
         except Exception as e:
