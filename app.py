@@ -15,21 +15,37 @@ def analyze_transcription(transcription_json):
     segment_speeds = []  # list of tuples: (segment_index, wpm, start, end, text)
     
     for i, seg in enumerate(segments):
-        words = seg.get("words", [])
+        # Get text and split into words
+        text = seg.get("text", "").strip()
+        if not text:
+            continue
+            
+        words = text.split()
         num_words = len(words)
         duration = seg["end"] - seg["start"]
-        total_words += num_words
-        total_duration += duration if duration > 0 else 1  # avoid zero division
         
-        # Count filler words in this segment
-        seg_filler = sum(
-            1 for w in words if w["word"].lower() in filler_words
-        )
+        total_words += num_words
+        total_duration += duration if duration > 0 else 0.1  # small fallback to avoid zero division
+        
+        # Count filler words in this segment (case-insensitive)
+        text_lower = text.lower()
+        seg_filler = 0
+        for filler in filler_words:
+            # Count occurrences of each filler word
+            if filler == "you know":
+                # Special case for multi-word filler
+                seg_filler += text_lower.count(filler)
+            else:
+                # Count as whole words to avoid false matches
+                import re
+                pattern = r'\b' + re.escape(filler) + r'\b'
+                seg_filler += len(re.findall(pattern, text_lower))
+        
         filler_count += seg_filler
         
         # Calculate WPM for segment
         wpm = (num_words / duration) * 60 if duration > 0 else 0
-        segment_speeds.append((i, wpm, seg["start"], seg["end"], seg["text"]))
+        segment_speeds.append((i, wpm, seg["start"], seg["end"], text))
     
     average_wpm = (total_words / total_duration) * 60 if total_duration > 0 else 0
     
@@ -38,10 +54,14 @@ def analyze_transcription(transcription_json):
     slowest_segment = min(segment_speeds, key=lambda x: x[1]) if segment_speeds else None
     
     return {
+        "total_words": total_words,
+        "total_duration": total_duration,
         "average_wpm": average_wpm,
         "filler_count": filler_count,
+        "filler_percentage": (filler_count / total_words * 100) if total_words > 0 else 0,
         "fastest_segment": fastest_segment,
-        "slowest_segment": slowest_segment
+        "slowest_segment": slowest_segment,
+        "num_segments": len(segments)
     }
 
 
@@ -91,7 +111,7 @@ if uploaded and run_button:
         
         if transcription_text:
             results = analyze_transcription(transcription_response.to_dict())
-            st.write(transcription_response.to_dict())
+            # st.write(transcription_response.to_dict())
             st.markdown(f"**Average WPM:** {results['average_wpm']:.2f}")
             st.markdown(f"**Number of filler words:** {results['filler_count']}")
 
