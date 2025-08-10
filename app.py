@@ -2,6 +2,8 @@ import streamlit as st
 import ffmpeg
 import tempfile
 import os
+import cv2
+import numpy as np
 from openai import OpenAI
 
 def analyze_eye_contact(video_path):
@@ -119,7 +121,6 @@ def analyze_eye_contact(video_path):
         "eye_contact_percentage": eye_contact_percentage
     }
 
-
 def analyze_transcription(transcription_json):
     segments = transcription_json.get("segments", [])
     
@@ -129,7 +130,7 @@ def analyze_transcription(transcription_json):
     filler_count = 0
     
     segment_speeds = []  # list of tuples: (segment_index, wpm, start, end, text)
-
+    
     for i, seg in enumerate(segments):
         # Get text and split into words
         text = seg.get("text", "").strip()
@@ -183,101 +184,182 @@ def analyze_transcription(transcription_json):
 
 st.set_page_config(page_title="AI Speech Coach", layout='wide')
 st.title("AI Speech Coach")
+st.markdown("Upload a video to analyze both speech patterns and eye contact behavior")
 
 uploaded = st.file_uploader("Upload MP4 or MOV video", type=['mp4', 'mov'])
+
+# Add analysis options
+col1, col2 = st.columns(2)
+with col1:
+    analyze_speech = st.checkbox("Analyze Speech", value=True)
+with col2:
+    analyze_vision = st.checkbox("Analyze Eye Contact & Facial Features", value=True)
+
 run_button = st.button("Analyze")
 
 if uploaded and run_button:
+    if not analyze_speech and not analyze_vision:
+        st.warning("Please select at least one analysis option.")
+        st.stop()
+    
     with st.spinner("Processing video..."):
         # Save uploaded video to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
             temp_video_file.write(uploaded.read())
             temp_video_path = temp_video_file.name
         
-        # Extract audio to temp mp3 file
-        temp_audio_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        temp_audio_path = temp_audio_file.name
-        temp_audio_file.close()  # Close so ffmpeg can write
+        results = {}
         
-        try:
-            ffmpeg.input(temp_video_path).output(temp_audio_path, **{'q:a': 0, 'map': 'a?'}).run(overwrite_output=True)
-        except Exception as e:
-            st.error(f"Error extracting audio: {e}")
-            os.unlink(temp_video_path)
-            os.unlink(temp_audio_path)
-            st.stop()
+        # Speech Analysis
+        if analyze_speech:
+            st.subheader("🎙️ Speech Analysis")
+            with st.spinner("Extracting audio and transcribing..."):
+                # Extract audio to temp mp3 file
+                temp_audio_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+                temp_audio_path = temp_audio_file.name
+                temp_audio_file.close()  # Close so ffmpeg can write
+                
+                try:
+                    ffmpeg.input(temp_video_path).output(temp_audio_path, **{'q:a': 0, 'map': 'a?'}).run(overwrite_output=True)
+                except Exception as e:
+                    st.error(f"Error extracting audio: {e}")
+                    os.unlink(temp_video_path)
+                    os.unlink(temp_audio_path)
+                    st.stop()
+                
+                # Transcribe with OpenAI Whisper
+                try:
+                    client = OpenAI(api_key=st.secrets["openai_api_key"])
+                    with open(temp_audio_path, "rb") as audio_file:
+                        transcription_response = client.audio.transcriptions.create(
+                            file=audio_file,
+                            model="whisper-1",
+                            response_format="verbose_json"
+                        )
+                    transcription_text = transcription_response
+                    results['speech'] = analyze_transcription(transcription_response.to_dict())
+                except Exception as e:
+                    st.error(f"Error during transcription: {e}")
+                    transcription_text = None
+                
+                # Clean up audio file
+                os.unlink(temp_audio_path)
         
-        # Transcribe with OpenAI Whisper
-        try:
-            client = OpenAI(api_key=st.secrets["openai_api_key"])
-            with open(temp_audio_path, "rb") as audio_file:
-                transcription_response = client.audio.transcriptions.create(
-                    file=audio_file,
-                    model="whisper-1",
-                    response_format="verbose_json"
-                )
-            transcription_text = transcription_response
-        except Exception as e:
-            st.error(f"Error during transcription: {e}")
-            transcription_text = None
+        # Vision Analysis
+        if analyze_vision:
+            st.subheader("👁️ Eye Contact & Facial Analysis")
+            with st.spinner("Analyzing facial features and eye contact..."):
+                try:
+                    results['vision'] = analyze_eye_contact(temp_video_path)
+                except Exception as e:
+                    st.error(f"Error during vision analysis: {e}")
+                    results['vision'] = None
         
-        if transcription_text:
-            results = analyze_transcription(transcription_response.to_dict())
-            # st.write(transcription_response.to_dict())
-            st.write("## Speech Analysis Results")
-            st.markdown(f"Average WPM: {results['average_wpm']:.2f}")
-            st.markdown(f"Number of filler words: {results['filler_count']}")
-
-            if results['fastest_segment']:
-                i, wpm, start, end, text = results['fastest_segment']
-                st.markdown(f"Fastest segment (WPM={wpm:.2f}): {start:.2f}s - {end:.2f}s")
-                st.text(text)
-
-            if results['slowest_segment']:
-                i, wpm, start, end, text = results['slowest_segment']
-                st.markdown(f"Slowest segment (WPM={wpm:.2f}): {start:.2f}s - {end:.2f}s")
-                st.text(text)
-
-        try:
-            results['vision'] = analyze_eye_contact(temp_video_path)
-        except Exception as e:
-            st.error(f"Error during vision analysis: {e}")
-            results['vision'] = None
-
-
-        st.subheader("👁️ Visual Presence Metrics")
-        vision_results = results['vision']
-        
-        # Key metrics
-        st.metric("Face Visibility", f"{vision_results['face_presence_percentage']:.1f}%")
-        st.metric("Eye Detection Rate", f"{vision_results['eye_detection_percentage']:.1f}%")
-        st.metric("Eye Contact Estimate", f"{vision_results['eye_contact_percentage']:.1f}%")
-        
-        # Performance insights
-        if vision_results['face_presence_percentage'] < 80:
-            st.warning("💡 Try to stay in frame more consistently")
-        else:
-            st.success("✅ Good frame presence!")
-        
-        if vision_results['eye_detection_percentage'] < 70:
-            st.info("💡 Face the camera more directly for better eye detection")
-        else:
-            st.success("✅ Good face positioning!")
-        
-        if vision_results['eye_contact_percentage'] < 60:
-            st.info("💡 Try to look at the camera more frequently")
-        elif vision_results['eye_contact_percentage'] > 80:
-            st.success("✅ Excellent eye contact!")
-        else:
-            st.success("✅ Good eye contact!")
-        
-        # Technical details
-        st.markdown("**Technical Details:**")
-        st.text(f"Video duration: {vision_results['duration']:.1f}s")
-        st.text(f"Frames analyzed: {vision_results['total_frames_processed']}")
-        st.text(f"Frames with face: {vision_results['frames_with_face']}")
-        st.text(f"Frames with eyes: {vision_results['frames_with_eyes']}")
-
-        # Clean up temp files
+        # Clean up video file
         os.unlink(temp_video_path)
-        os.unlink(temp_audio_path)
+        
+        # Display Results
+        st.markdown("---")
+        st.header("📊 Analysis Results")
+        
+        # Create columns for results
+        col1, col2 = st.columns(2)
+        
+        # Speech Results
+        if analyze_speech and 'speech' in results:
+            with col1:
+                st.subheader("🎙️ Speech Metrics")
+                speech_results = results['speech']
+                
+                # Key metrics
+                st.metric("Average Words Per Minute", f"{speech_results['average_wpm']:.1f}")
+                st.metric("Filler Words", speech_results['filler_count'])
+                st.metric("Filler Word Percentage", f"{speech_results['filler_percentage']:.1f}%")
+                
+                # Performance insights
+                if speech_results['average_wpm'] < 120:
+                    st.info("💡 Consider speaking slightly faster for better engagement")
+                elif speech_results['average_wpm'] > 180:
+                    st.info("💡 Consider slowing down slightly for better clarity")
+                else:
+                    st.success("✅ Good speaking pace!")
+                
+                if speech_results['filler_percentage'] > 5:
+                    st.warning("💡 Try to reduce filler words for more confident delivery")
+                else:
+                    st.success("✅ Good control of filler words!")
+                
+                # Segment details
+                if speech_results['fastest_segment']:
+                    i, wpm, start, end, text = speech_results['fastest_segment']
+                    st.markdown("**Fastest segment:**")
+                    st.markdown(f"⏱️ {start:.1f}s - {end:.1f}s ({wpm:.1f} WPM)")
+                    st.markdown(f"📝 \"{text[:100]}...\"" if len(text) > 100 else f"📝 \"{text}\"")
+                
+                if speech_results['slowest_segment']:
+                    i, wpm, start, end, text = speech_results['slowest_segment']
+                    st.markdown("**Slowest segment:**")
+                    st.markdown(f"⏱️ {start:.1f}s - {end:.1f}s ({wpm:.1f} WPM)")
+                    st.markdown(f"📝 \"{text[:100]}...\"" if len(text) > 100 else f"📝 \"{text}\"")
+        
+        # Vision Results
+        if analyze_vision and 'vision' in results:
+            with col2:
+                st.subheader("👁️ Visual Presence Metrics")
+                vision_results = results['vision']
+                
+                # Key metrics
+                st.metric("Face Visibility", f"{vision_results['face_presence_percentage']:.1f}%")
+                st.metric("Eye Detection Rate", f"{vision_results['eye_detection_percentage']:.1f}%")
+                st.metric("Eye Contact Estimate", f"{vision_results['eye_contact_percentage']:.1f}%")
+                
+                # Performance insights
+                if vision_results['face_presence_percentage'] < 80:
+                    st.warning("💡 Try to stay in frame more consistently")
+                else:
+                    st.success("✅ Good frame presence!")
+                
+                if vision_results['eye_detection_percentage'] < 70:
+                    st.info("💡 Face the camera more directly for better eye detection")
+                else:
+                    st.success("✅ Good face positioning!")
+                
+                if vision_results['eye_contact_percentage'] < 60:
+                    st.info("💡 Try to look at the camera more frequently")
+                elif vision_results['eye_contact_percentage'] > 80:
+                    st.success("✅ Excellent eye contact!")
+                else:
+                    st.success("✅ Good eye contact!")
+                
+                # Technical details
+                st.markdown("**Technical Details:**")
+                st.text(f"Video duration: {vision_results['duration']:.1f}s")
+                st.text(f"Frames analyzed: {vision_results['total_frames_processed']}")
+                st.text(f"Frames with face: {vision_results['frames_with_face']}")
+                st.text(f"Frames with eyes: {vision_results['frames_with_eyes']}")
+        
+        # Combined insights
+        if analyze_speech and analyze_vision and 'speech' in results and 'vision' in results:
+            st.markdown("---")
+            st.subheader("🎯 Overall Performance Summary")
+            
+            speech_score = min(100, max(0, 100 - results['speech']['filler_percentage'] * 2))
+            vision_score = (results['vision']['face_presence_percentage'] + 
+                          results['vision']['eye_contact_percentage']) / 2
+            
+            overall_score = (speech_score + vision_score) / 2
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Speech Score", f"{speech_score:.0f}/100")
+            with col2:
+                st.metric("Visual Score", f"{vision_score:.0f}/100")
+            with col3:
+                st.metric("Overall Score", f"{overall_score:.0f}/100")
+            
+            if overall_score >= 80:
+                st.success("🌟 Excellent presentation skills!")
+            elif overall_score >= 65:
+                st.info("👍 Good presentation with room for improvement")
+            else:
+                st.warning("💪 Keep practicing - you're on the right track!")
