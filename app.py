@@ -32,7 +32,7 @@ if uploaded and run_button:
         
         # Transcribe with OpenAI Whisper
         try:
-            client = OpenAI()
+            client = OpenAI(api_key=st.secrets["openai_api_key"])
             with open(temp_audio_path, "rb") as audio_file:
                 transcription_response = client.audio.transcriptions.create(
                     file=audio_file,
